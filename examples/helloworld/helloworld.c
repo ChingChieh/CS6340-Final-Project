@@ -1,6 +1,7 @@
 #include <gtk/gtk.h>
 
 static void print_hello(GtkWidget *widget, gpointer data) {
+  // NOTE: g_print is also interesting function
   g_print("Hello World\n");
 }
 
@@ -17,6 +18,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
   gtk_container_add(GTK_CONTAINER(window), button_box);
 
   button = gtk_button_new_with_label("Hello World");
+  // NOTE: g_signal_connect can be interesting target
+  // extract "clicked", "print_hello" from arguments
   g_signal_connect(button, "clicked", G_CALLBACK(print_hello), NULL);
   g_signal_connect_swapped(button, "clicked", G_CALLBACK(gtk_widget_destroy),
                            window);

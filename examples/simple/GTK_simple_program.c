@@ -10,6 +10,8 @@ void value_changed_callback(GtkButton *Button, gpointer data) {
 
     gint value = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(((MultiWidget*)data)->w1));
     GString *text = g_string_new("");
+    // NOTE: g_string_printf
+    // print path conditions for user
     // g_string_printf(text, "%d", value);
     if (value == 47) {
         g_string_printf(text, "%s", "You are sooo lucky!!!");
@@ -49,6 +51,7 @@ int main(int argc, char *argv[]) {
     
     gtk_container_add(GTK_CONTAINER(window), vbox);
 
+    // NOTE: g_sigal_connect with clicked
     g_signal_connect(GTK_BUTTON(magicButton), "clicked",
                      G_CALLBACK(value_changed_callback), data);
     g_signal_connect(window, "destroy",
