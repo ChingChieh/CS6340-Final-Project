@@ -23,6 +23,7 @@ echo "Z3_DIR="$Z3_DIR
 
 echo "add the following lines to your rc files"
 
+echo "export SVF_DIR=$install_path/SVF/"
 echo "export LLVM_DIR=$install_path/$LLVMHome"
 echo "export Z3_DIR=$install_path/$Z3Home"
 echo "export PATH=$LLVM_DIR/bin:$PROJECTHOME/bin:$PATH"
