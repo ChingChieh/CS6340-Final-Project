@@ -115,6 +115,36 @@ void traverseOnVFG(const SVFG *vfg, Value *val) {
   }
 }
 
+void traverseCallGraph(PTACallGraph *callgraph) {
+  SVFUtil::outs() << "traverse \n";
+  callgraph->verifyCallGraph();
+
+  // NOTE: would be empty
+  PTACallGraph::CallEdgeMap &cm = callgraph->getIndCallMap();
+  for (auto i = cm.begin(); i != cm.end(); i++) {
+    SVFUtil::outs() << "first loop \n";
+    auto fset = i->second;
+    for (auto j = fset.begin(); j != fset.end(); j++) {
+      const SVFFunction *fun = *j;
+      SVFUtil::outs() << fun->getName().str() << "\n";
+    }
+  }
+
+  const PTACallGraph::CallInstToCallGraphEdgesMap &cm2 =
+      callgraph->getCallInstToCallGraphEdgesMap();
+  for (auto i = cm2.begin(); i != cm2.end(); i++) {
+    SVFUtil::outs() << "second loop \n";
+    const CallBlockNode *cbn = i->first;
+    const PTACallGraph::CallGraphEdgeSet ces = i->second;
+    PTACallGraph::FunctionSet fset;
+    callgraph->getCallees(cbn, fset);
+    for (auto j = fset.begin(); j != fset.end(); j++) {
+      const SVFFunction *fun = *j;
+      SVFUtil::outs() << fun->getName().str() << "\n";
+    }
+  }
+}
+
 int main(int argc, char **argv) {
 
   int arg_num = 0;
@@ -173,9 +203,10 @@ int main(int argc, char **argv) {
   pca->allocate(svfModule);
   pca->printPathCond();
 
-  Detector *detector = new Detector();
-  detector->runOnModule(svfModule);
+  // Detector *detector = new Detector();
+  // detector->runOnModule(svfModule);
 
+  traverseCallGraph(callgraph);
   LLVMModuleSet::getLLVMModuleSet()->dumpModulesToFile(".svf.bc");
 
   return 0;
