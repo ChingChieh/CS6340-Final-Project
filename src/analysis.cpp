@@ -133,14 +133,17 @@ void traverseCallGraph(PTACallGraph *callgraph) {
   const PTACallGraph::CallInstToCallGraphEdgesMap &cm2 =
       callgraph->getCallInstToCallGraphEdgesMap();
   for (auto i = cm2.begin(); i != cm2.end(); i++) {
-    SVFUtil::outs() << "second loop \n";
+    SVFUtil::outs() << "second loop ==============\n";
+    // NOTE: include/Graphs/ICFGNode.h:364:0
     const CallBlockNode *cbn = i->first;
     const PTACallGraph::CallGraphEdgeSet ces = i->second;
+    const SVFFunction* caller = cbn ->getCaller();
+    SVFUtil::outs() << "caller: " << caller->getName().str() << "\n";
     PTACallGraph::FunctionSet fset;
     callgraph->getCallees(cbn, fset);
     for (auto j = fset.begin(); j != fset.end(); j++) {
-      const SVFFunction *fun = *j;
-      SVFUtil::outs() << fun->getName().str() << "\n";
+      const SVFFunction *callee = *j;
+      SVFUtil::outs() << "callee: " << callee->getName().str() << "\n";
     }
   }
 }
