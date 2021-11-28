@@ -8,6 +8,8 @@
 #include "detector.h"
 #include <fmt/core.h>
 #include <fmt/format.h>
+#include <fstream>
+#include <iostream>
 #include <map>
 #include <set>
 #include <vector>
@@ -20,7 +22,12 @@ static llvm::cl::opt<std::string>
     InputFilename(cl::Positional, llvm::cl::desc("<input bitcode>"),
                   llvm::cl::init("-"));
 
-set<string> target_functions{"g_print"};
+static llvm::cl::opt<std::string>
+    OutputFilename("output", llvm::cl::desc("Output File Name"));
+
+static llvm::cl::alias OutputFilename2("o", llvm::cl::aliasopt(OutputFilename));
+
+set<string> target_functions{"g_print", "g_string_printf"};
 
 class Record {
 public:
@@ -54,8 +61,9 @@ ostream &operator<<(ostream &os, const Record &r) {
 }
 
 SVF::raw_ostream &operator<<(SVF::raw_ostream &os, const Record &r) {
-  os << fmt::format("Record callback: {}, event: {}, caller: {}, callee: {}, widget: {}",
-                    r.callback_name, r.event_type, r.caller, r.callee, r.widget_name);
+  os << fmt::format(
+      "Record callback: {}, event: {}, caller: {}, callee: {}, widget: {}",
+      r.callback_name, r.event_type, r.caller, r.callee, r.widget_name);
   if (!r.filename.empty()) {
     os << fmt::format(" location: {}:{}:{}", r.filename, r.line, r.col);
   }
@@ -64,17 +72,56 @@ SVF::raw_ostream &operator<<(SVF::raw_ostream &os, const Record &r) {
 
 void analyze(vector<Record> &records, vector<string> &interesting_functions,
              map<string, vector<string>> &interesting_map) {
+  fstream fs;
+  bool first = true;
+  if (!OutputFilename.empty()) {
+    fs.open(OutputFilename, fstream::out);
+    if (fs.fail()) {
+      SVFUtil::errs() << "Cannot open output file\n";
+      exit(1);
+    }
+  }
   SVFUtil::outs() << "start analyzing \n";
   SVFUtil::outs() << "list records \n";
   for (Record &r : records) {
     SVFUtil::outs() << r << "\n";
   }
-  for(auto &it: interesting_map){
-    SVFUtil::outs() << "callee: " << it.first << "\n";
-    for(auto &caller_name: it.second){
-      SVFUtil::outs() << "caller: " << caller_name << "\n";
+  for (auto &it : interesting_map) {
+    for (auto &caller_name : it.second) {
+      // SVFUtil::outs() << "found interesting function: " << it.first << "\n";
+      SVFUtil::outs() << fmt::format("Found interesting function: {} in {} \n",
+                                     it.first, caller_name);
+      SVFUtil::outs() << fmt::format(
+          "Try to found corresponding g_singal_connect \n");
+      // SVFUtil::outs() << "caller: " << caller_name << "\n";
+
+      // NOTE: iterate records to find matching callback
+      for (Record &r : records) {
+        if (r.callback_name == caller_name) {
+          stringstream ss;
+          if (!first) {
+            ss << "===================================\n";
+          }
+          ss << "Found a match!\n";
+          ss << fmt::format("interesting function: {}\n", it.first);
+          ss << fmt::format("in callback function: {}\n", caller_name);
+          ss << fmt::format("event type {}\n", r.event_type);
+          ss << fmt::format("widget name: {}\n", r.widget_name);
+          ss << fmt::format("g_signal_connect source location: {}:{}:{}\n",
+                            r.filename, r.line, r.col);
+          // ss << "[MATCH] " << r << "\n";
+          SVFUtil::outs() << ss.str();
+          if (fs.is_open()) {
+            fs << ss.str();
+          }
+          first = false;
+        }
+      }
     }
     SVFUtil::outs() << "================\n";
+  }
+  if (fs.is_open()) {
+    fs.close();
   }
 }
 
