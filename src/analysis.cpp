@@ -116,6 +116,8 @@ void traverseOnVFG(const SVFG *vfg, Value *val) {
 }
 
 void traverseCallGraph(PTACallGraph *callgraph) {
+  // NOTE: include/Graphs/PTACallGraph.h:218:0
+
   SVFUtil::outs() << "traverse \n";
   callgraph->verifyCallGraph();
 
@@ -137,13 +139,46 @@ void traverseCallGraph(PTACallGraph *callgraph) {
     // NOTE: include/Graphs/ICFGNode.h:364:0
     const CallBlockNode *cbn = i->first;
     const PTACallGraph::CallGraphEdgeSet ces = i->second;
-    const SVFFunction* caller = cbn ->getCaller();
+    const SVFFunction *caller = cbn->getCaller();
+    const Instruction *callsite = cbn->getCallSite();
+    const CallBlockNode::ActualParmVFGNodeVec & params = cbn -> getActualParms();
+
     SVFUtil::outs() << "caller: " << caller->getName().str() << "\n";
+
     PTACallGraph::FunctionSet fset;
     callgraph->getCallees(cbn, fset);
     for (auto j = fset.begin(); j != fset.end(); j++) {
       const SVFFunction *callee = *j;
-      SVFUtil::outs() << "callee: " << callee->getName().str() << "\n";
+      u32_t arg_size = callee->arg_size();
+      string callee_name = callee->getName().str();
+      SVFUtil::outs() << "callee: " << callee_name << "\n";
+      if (callee_name != "g_signal_connect_data") {
+        continue;
+      }
+      SVFUtil::outs() << "opcode name: " << callsite->getOpcodeName() << "\n";
+      SVFUtil::outs() << "arg_size: " << arg_size << "\n";
+      SVFUtil::outs() << "arg_size2: " << params.size() << "\n";
+      for (u32_t arg_num = 0; arg_num < arg_size; arg_num++) {
+        const Value *arg = callsite->getOperand(arg_num);
+        SVFUtil::outs() << "arg_name: " << arg->getName() << "\n";
+      }
+      int index = 0;
+      for (auto &p:params){
+        const Type* t = p->getType();
+        // SVFUtil::outs() << p->getValueName() << "\n";
+        p->dump();
+        if (p->hasValue()){
+          const Value *v= p->getValue();
+          SVFUtil::outs() << "get value " << *v << "\n";
+          SVFUtil::outs() << "get type " << *t << "\n";
+          // if ()
+        }
+        index++;
+      }
+      // for (auto it=callsite->op_begin();it!=callsite->op_end();it++){
+      //   Value *operand = *it;
+      //   SVFUtil::outs() << "arg_name: " << operand->getName() << "\n";
+      // }
     }
   }
 }
