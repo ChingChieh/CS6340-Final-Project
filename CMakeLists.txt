@@ -75,4 +75,8 @@ set(Z3_HEADER "${Z3_DIR}/include/")
 include_directories(${Z3_HEADER})
 LINK_DIRECTORIES(${Z3_DIR}/bin)
 
+# fmt library to beeter life
+add_subdirectory(third_party/fmt)
+include_directories(third_party/fmt/include)
+
 add_subdirectory(src)

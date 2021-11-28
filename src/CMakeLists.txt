@@ -10,5 +10,6 @@ set_target_properties( svf-ex PROPERTIES
 
 target_link_libraries(analysis ${SVF_LIB} ${LLVMCudd} ${llvm_libs})
 target_link_libraries(analysis ${Z3_DIR}/bin/libz3.a )
+target_link_libraries(analysis fmt)
 set_target_properties(analysis PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
