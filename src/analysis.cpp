@@ -141,7 +141,7 @@ void traverseCallGraph(PTACallGraph *callgraph) {
     const PTACallGraph::CallGraphEdgeSet ces = i->second;
     const SVFFunction *caller = cbn->getCaller();
     const Instruction *callsite = cbn->getCallSite();
-    const CallBlockNode::ActualParmVFGNodeVec & params = cbn -> getActualParms();
+    const CallBlockNode::ActualParmVFGNodeVec &params = cbn->getActualParms();
 
     SVFUtil::outs() << "caller: " << caller->getName().str() << "\n";
 
@@ -163,22 +163,50 @@ void traverseCallGraph(PTACallGraph *callgraph) {
         SVFUtil::outs() << "arg_name: " << arg->getName() << "\n";
       }
       int index = 0;
-      for (auto &p:params){
-        const Type* t = p->getType();
+      for (auto &p : params) {
+        const Type *t = p->getType();
         // SVFUtil::outs() << p->getValueName() << "\n";
         p->dump();
-        if (p->hasValue()){
-          const Value *v= p->getValue();
+        if (p->hasValue()) {
+          const Value *v = p->getValue();
           SVFUtil::outs() << "get value " << *v << "\n";
           SVFUtil::outs() << "get type " << *t << "\n";
-          // if ()
+          if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(v)) {
+            SVFUtil::outs() << "is constant expr "
+                            << "\n";
+          } else if (const ConstantArray *CA = dyn_cast<ConstantArray>(v)) {
+            SVFUtil::outs() << "is constant array "
+                            << "\n";
+          } else if (const GetElementPtrInst *GEP =
+                         dyn_cast<GetElementPtrInst>(v)) {
+            SVFUtil::outs() << "is GEP"
+                            << "\n";
+            const Value *gv = GEP->getPointerOperand();
+            SVFUtil::outs() << *gv << "\n";
+            // const ConstantDataArray *CA = cast<ConstantDataArray>(
+            //     cast<GlobalVariable>(cast<ConstantExpr>(gv)));
+            // const ConstantDataArray *CA =
+            // cast<ConstantDataArray>(gv->stripPointerCasts());
+            if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(gv)) {
+              // Do something with GV
+              // GV->dump();
+              SVFUtil::outs() << "IS_GV" << *GV << "\n";
+              if (const ConstantDataArray *CDA =
+                      dyn_cast<ConstantDataArray>(GV->getInitializer())) {
+                SVFUtil::outs() << "IS_CDA"
+                                << "\n";
+                string s = CDA->getAsCString().str();
+                SVFUtil::outs() << s << "\n";
+              }
+            }
+          }
+          index++;
         }
-        index++;
+        // for (auto it=callsite->op_begin();it!=callsite->op_end();it++){
+        //   Value *operand = *it;
+        //   SVFUtil::outs() << "arg_name: " << operand->getName() << "\n";
+        // }
       }
-      // for (auto it=callsite->op_begin();it!=callsite->op_end();it++){
-      //   Value *operand = *it;
-      //   SVFUtil::outs() << "arg_name: " << operand->getName() << "\n";
-      // }
     }
   }
 }
