@@ -139,7 +139,7 @@ void traverseCallGraph(PTACallGraph *callgraph) {
   const PTACallGraph::CallInstToCallGraphEdgesMap &cm2 =
       callgraph->getCallInstToCallGraphEdgesMap();
   for (auto i = cm2.begin(); i != cm2.end(); i++) {
-    SVFUtil::outs() << "second loop ==============\n";
+    // SVFUtil::outs() << "second loop ==============\n";
     // NOTE: include/Graphs/ICFGNode.h:364:0
     const CallBlockNode *cbn = i->first;
     const PTACallGraph::CallGraphEdgeSet ces = i->second;
@@ -147,18 +147,7 @@ void traverseCallGraph(PTACallGraph *callgraph) {
     const Instruction *callsite = cbn->getCallSite();
 
     const DebugLoc &DL = callsite->getDebugLoc();
-    if (DL) {
-      DIScope *Scope = cast<DIScope>(DL->getScope());
-      string fileName = Scope->getFilename().str();
-      u32_t line = DL.getLine();
-      u32_t col = DL.getCol();
-      // SVFUtil::outs() << "DL: " << *DL << "\n";
-      SVFUtil::outs() << fmt::format("file: {}, line: {}, col: {}\n", fileName,
-                                     line, col);
-    }
     const CallBlockNode::ActualParmVFGNodeVec &params = cbn->getActualParms();
-
-    SVFUtil::outs() << "caller: " << caller->getName().str() << "\n";
 
     PTACallGraph::FunctionSet fset;
     callgraph->getCallees(cbn, fset);
@@ -166,9 +155,19 @@ void traverseCallGraph(PTACallGraph *callgraph) {
       const SVFFunction *callee = *j;
       u32_t arg_size = callee->arg_size();
       string callee_name = callee->getName().str();
-      SVFUtil::outs() << "callee: " << callee_name << "\n";
       if (callee_name != "g_signal_connect_data") {
         continue;
+      }
+      SVFUtil::outs() << "caller: " << caller->getName().str() << "\n";
+      SVFUtil::outs() << "callee: " << callee_name << "\n";
+      if (DL) {
+        DIScope *Scope = cast<DIScope>(DL->getScope());
+        string fileName = Scope->getFilename().str();
+        u32_t line = DL.getLine();
+        u32_t col = DL.getCol();
+        // SVFUtil::outs() << "DL: " << *DL << "\n";
+        SVFUtil::outs() << fmt::format("file: {}, line: {}, col: {}\n",
+                                       fileName, line, col);
       }
       SVFUtil::outs() << "opcode name: " << callsite->getOpcodeName() << "\n";
       SVFUtil::outs() << "arg_size: " << arg_size << "\n";
@@ -187,8 +186,20 @@ void traverseCallGraph(PTACallGraph *callgraph) {
           SVFUtil::outs() << "get value " << *v << "\n";
           SVFUtil::outs() << "get type " << *t << "\n";
           if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(v)) {
-            SVFUtil::outs() << "is constant expr "
-                            << "\n";
+            SVFUtil::outs() << "is constant expr \n";
+            if (const BitCastInst *BI = dyn_cast<BitCastInst>(v)) {
+              SVFUtil::outs() << "is constant expr BITCAST \n";
+            }
+            const Value *op0 = CE->getOperand(0);
+            // SVFUtil::outs() << *op0 << "\n";
+            if (const Function *F = dyn_cast<Function>(op0)) {
+              SVFUtil::outs() << "OP0 is FUNCTION \n";
+              // NOTE: get the print_hello here !!
+              auto Fname = F->getName().str();
+              SVFUtil::outs() << Fname << "\n";
+            }
+
+            // SVFUtil::outs() << *(CE->getOperand(0)) << "\n";
           } else if (const ConstantArray *CA = dyn_cast<ConstantArray>(v)) {
             SVFUtil::outs() << "is constant array "
                             << "\n";
