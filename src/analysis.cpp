@@ -9,6 +9,7 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <map>
+#include <set>
 #include <vector>
 
 using namespace SVF;
@@ -19,108 +20,69 @@ static llvm::cl::opt<std::string>
     InputFilename(cl::Positional, llvm::cl::desc("<input bitcode>"),
                   llvm::cl::init("-"));
 
-static llvm::cl::opt<bool> LEAKCHECKER("leak", llvm::cl::init(false),
-                                       llvm::cl::desc("Memory Leak Detection"));
+set<string> target_functions{"g_print"};
 
-/*!
- * An example to query alias results of two LLVM values
- */
-AliasResult aliasQuery(PointerAnalysis *pta, Value *v1, Value *v2) {
-  return pta->alias(v1, v2);
+class Record {
+public:
+  Record(string callback_name = "", string event_type = "", string caller = "",
+         string callee = "", string widget_name = "")
+      : callback_name(callback_name), event_type(event_type), caller(caller),
+        callee(callee), widget_name(widget_name) {}
+  string callback_name;
+  string event_type;
+  string caller;
+  string callee;
+  string widget_name;
+  u32_t line, col;
+  string filename;
+  bool isValid() {
+    return !callback_name.empty() && !event_type.empty() && !caller.empty() &&
+           !callee.empty();
+  }
+  friend ostream &operator<<(ostream &os, const Record &r);
+  friend SVF::raw_ostream &operator<<(SVF::raw_ostream &os, const Record &r);
+};
+
+ostream &operator<<(ostream &os, const Record &r) {
+  os << fmt::format(
+      "Record callback: {}, event: {}, caller: {}, callee: {}, widget: {}",
+      r.callback_name, r.event_type, r.caller, r.callee, r.widget_name);
+  if (!r.filename.empty()) {
+    os << fmt::format(" location: {}:{}:{}", r.filename, r.line, r.col);
+  }
+  return os;
 }
 
-/*!
- * An example to print points-to set of an LLVM value
- */
-std::string printPts(PointerAnalysis *pta, Value *val) {
-
-  std::string str;
-  raw_string_ostream rawstr(str);
-
-  NodeID pNodeId = pta->getPAG()->getValueNode(val);
-  const NodeBS &pts = pta->getPts(pNodeId);
-  for (NodeBS::iterator ii = pts.begin(), ie = pts.end(); ii != ie; ii++) {
-    rawstr << " " << *ii << " ";
-    PAGNode *targetObj = pta->getPAG()->getPAGNode(*ii);
-    if (targetObj->hasValue()) {
-      rawstr << "(" << *targetObj->getValue() << ")\t ";
-    }
+SVF::raw_ostream &operator<<(SVF::raw_ostream &os, const Record &r) {
+  os << fmt::format("Record callback: {}, event: {}, caller: {}, callee: {}, widget: {}",
+                    r.callback_name, r.event_type, r.caller, r.callee, r.widget_name);
+  if (!r.filename.empty()) {
+    os << fmt::format(" location: {}:{}:{}", r.filename, r.line, r.col);
   }
-
-  return rawstr.str();
+  return os;
 }
 
-/*!
- * An example to query/collect all successor nodes from a ICFGNode (iNode) along
- * control-flow graph (ICFG)
- */
-void traverseOnICFG(ICFG *icfg, const Instruction *inst) {
-  ICFGNode *iNode = icfg->getBlockICFGNode(inst);
-  FIFOWorkList<const ICFGNode *> worklist;
-  std::set<const ICFGNode *> visited;
-  worklist.push(iNode);
-
-  /// Traverse along VFG
-  while (!worklist.empty()) {
-    const ICFGNode *vNode = worklist.pop();
-    for (ICFGNode::const_iterator it = vNode->OutEdgeBegin(),
-                                  eit = vNode->OutEdgeEnd();
-         it != eit; ++it) {
-      ICFGEdge *edge = *it;
-      ICFGNode *succNode = edge->getDstNode();
-      if (visited.find(succNode) == visited.end()) {
-        visited.insert(succNode);
-        worklist.push(succNode);
-      }
-    }
+void analyze(vector<Record> &records, vector<string> &interesting_functions,
+             map<string, vector<string>> &interesting_map) {
+  SVFUtil::outs() << "start analyzing \n";
+  SVFUtil::outs() << "list records \n";
+  for (Record &r : records) {
+    SVFUtil::outs() << r << "\n";
   }
-}
-
-/*!
- * An example to query/collect all the uses of a definition of a value along
- * value-flow graph (VFG)
- */
-void traverseOnVFG(const SVFG *vfg, Value *val) {
-  PAG *pag = PAG::getPAG();
-
-  PAGNode *pNode = pag->getPAGNode(pag->getValueNode(val));
-  const VFGNode *vNode = vfg->getDefSVFGNode(pNode);
-  FIFOWorkList<const VFGNode *> worklist;
-  std::set<const VFGNode *> visited;
-  worklist.push(vNode);
-
-  /// Traverse along VFG
-  while (!worklist.empty()) {
-    const VFGNode *vNode = worklist.pop();
-    for (VFGNode::const_iterator it = vNode->OutEdgeBegin(),
-                                 eit = vNode->OutEdgeEnd();
-         it != eit; ++it) {
-      VFGEdge *edge = *it;
-      VFGNode *succNode = edge->getDstNode();
-      if (visited.find(succNode) == visited.end()) {
-        visited.insert(succNode);
-        worklist.push(succNode);
-      }
+  for(auto &it: interesting_map){
+    SVFUtil::outs() << "callee: " << it.first << "\n";
+    for(auto &caller_name: it.second){
+      SVFUtil::outs() << "caller: " << caller_name << "\n";
     }
-  }
-
-  /// Collect all LLVM Values
-  for (std::set<const VFGNode *>::const_iterator it = visited.begin(),
-                                                 eit = visited.end();
-       it != eit; ++it) {
-    const VFGNode *node = *it;
-    // SVFUtil::outs() << *node << "\n";
-    /// can only query VFGNode involving top-level pointers (starting with % or
-    /// @ in LLVM IR)
-    // if(!SVFUtil::isa<MRSVFGNode>(node)){
-    //    const PAGNode* pNode = vfg->getLHSTopLevPtr(node);
-    //    const Value* val = pNode->getValue();
-    //}
+    SVFUtil::outs() << "================\n";
   }
 }
 
 void traverseCallGraph(PTACallGraph *callgraph) {
   // NOTE: include/Graphs/PTACallGraph.h:218:0
+  vector<Record> records;
+  vector<string> interesting_functions;
+  map<string, vector<string>> interesting_map;
 
   SVFUtil::outs() << "traverse \n";
   callgraph->verifyCallGraph();
@@ -148,6 +110,7 @@ void traverseCallGraph(PTACallGraph *callgraph) {
 
     const DebugLoc &DL = callsite->getDebugLoc();
     const CallBlockNode::ActualParmVFGNodeVec &params = cbn->getActualParms();
+    string caller_name = caller->getName().str();
 
     PTACallGraph::FunctionSet fset;
     callgraph->getCallees(cbn, fset);
@@ -155,27 +118,41 @@ void traverseCallGraph(PTACallGraph *callgraph) {
       const SVFFunction *callee = *j;
       u32_t arg_size = callee->arg_size();
       string callee_name = callee->getName().str();
-      if (callee_name != "g_signal_connect_data") {
+      if (target_functions.find(callee_name) != target_functions.end()) {
+        SVFUtil::outs() << "Found interesting " << callee_name << caller_name
+                        << "\n";
+        interesting_map[callee_name].push_back(caller_name);
+        interesting_functions.push_back(caller_name);
+        continue;
+      } else if (callee_name != "g_signal_connect_data") {
         continue;
       }
+
+      Record r;
+      r.caller = caller_name;
+      r.callee = callee_name;
+
       SVFUtil::outs() << "caller: " << caller->getName().str() << "\n";
       SVFUtil::outs() << "callee: " << callee_name << "\n";
       if (DL) {
         DIScope *Scope = cast<DIScope>(DL->getScope());
-        string fileName = Scope->getFilename().str();
+        string filename = Scope->getFilename().str();
         u32_t line = DL.getLine();
         u32_t col = DL.getCol();
         // SVFUtil::outs() << "DL: " << *DL << "\n";
         SVFUtil::outs() << fmt::format("file: {}, line: {}, col: {}\n",
-                                       fileName, line, col);
+                                       filename, line, col);
+        r.line = line;
+        r.col = col;
+        r.filename = filename;
       }
       SVFUtil::outs() << "opcode name: " << callsite->getOpcodeName() << "\n";
-      SVFUtil::outs() << "arg_size: " << arg_size << "\n";
-      SVFUtil::outs() << "arg_size2: " << params.size() << "\n";
-      for (u32_t arg_num = 0; arg_num < arg_size; arg_num++) {
-        const Value *arg = callsite->getOperand(arg_num);
-        SVFUtil::outs() << "arg_name: " << arg->getName() << "\n";
-      }
+      // SVFUtil::outs() << "arg_size: " << arg_size << "\n";
+      // SVFUtil::outs() << "arg_size2: " << params.size() << "\n";
+      // for (u32_t arg_num = 0; arg_num < arg_size; arg_num++) {
+      //   const Value *arg = callsite->getOperand(arg_num);
+      //   SVFUtil::outs() << "arg_name: " << arg->getName() << "\n";
+      // }
       int index = 0;
       for (auto &p : params) {
         const Type *t = p->getType();
@@ -183,69 +160,68 @@ void traverseCallGraph(PTACallGraph *callgraph) {
         p->dump();
         if (p->hasValue()) {
           const Value *v = p->getValue();
-          SVFUtil::outs() << "get value " << *v << "\n";
-          SVFUtil::outs() << "get type " << *t << "\n";
+          // SVFUtil::outs() << "get value " << *v << "\n";
+          // SVFUtil::outs() << "get type " << *t << "\n";
           if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(v)) {
-            SVFUtil::outs() << "is constant expr \n";
+            // SVFUtil::outs() << "is constant expr \n";
             if (const BitCastInst *BI = dyn_cast<BitCastInst>(v)) {
-              SVFUtil::outs() << "is constant expr BITCAST \n";
+              // SVFUtil::outs() << "is constant expr BITCAST \n";
             }
             const Value *op0 = CE->getOperand(0);
             // SVFUtil::outs() << *op0 << "\n";
             if (const Function *F = dyn_cast<Function>(op0)) {
-              SVFUtil::outs() << "OP0 is FUNCTION \n";
+              // SVFUtil::outs() << "OP0 is FUNCTION \n";
               // NOTE: get the print_hello here !!
-              auto Fname = F->getName().str();
-              SVFUtil::outs() << Fname << "\n";
+              const string callback_name = F->getName().str();
+              r.callback_name = callback_name;
+              // SVFUtil::outs() << Fname << "\n";
+              SVFUtil::outs()
+                  << fmt::format("callback name is {}!\n", callback_name);
             }
 
             // SVFUtil::outs() << *(CE->getOperand(0)) << "\n";
           } else if (const ConstantArray *CA = dyn_cast<ConstantArray>(v)) {
-            SVFUtil::outs() << "is constant array "
-                            << "\n";
+            // SVFUtil::outs() << "is constant array "
+            //                 << "\n";
           } else if (const GetElementPtrInst *GEP =
                          dyn_cast<GetElementPtrInst>(v)) {
             // NOTE: find "clicked"
-            SVFUtil::outs() << "is GEP"
-                            << "\n";
+            // SVFUtil::outs() << "is GEP"
+            //                 << "\n";
             const Value *gv = GEP->getPointerOperand();
-            SVFUtil::outs() << *gv << "\n";
-            // const ConstantDataArray *CA = cast<ConstantDataArray>(
-            //     cast<GlobalVariable>(cast<ConstantExpr>(gv)));
-            // const ConstantDataArray *CA =
-            // cast<ConstantDataArray>(gv->stripPointerCasts());
+            // SVFUtil::outs() << *gv << "\n";
             if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(gv)) {
-              // Do something with GV
-              // GV->dump();
-              SVFUtil::outs() << "IS_GV" << *GV << "\n";
+              // SVFUtil::outs() << "IS_GV" << *GV << "\n";
               if (const ConstantDataArray *CDA =
                       dyn_cast<ConstantDataArray>(GV->getInitializer())) {
-                SVFUtil::outs() << "IS_CDA"
-                                << "\n";
-                string s = CDA->getAsCString().str();
-                SVFUtil::outs() << s << "\n";
+                // SVFUtil::outs() << "IS_CDA"
+                //                 << "\n";
+                string event_type = CDA->getAsCString().str();
+                r.event_type = event_type;
+                // SVFUtil::outs() << s << "\n";
+                SVFUtil::outs()
+                    << fmt::format("event type is {}\n", event_type);
               }
             }
           } else if (const BitCastInst *BI = dyn_cast<BitCastInst>(v)) {
-            SVFUtil::outs() << "IS BITCAST" << *BI << "\n";
+            // SVFUtil::outs() << "IS BITCAST" << *BI << "\n";
             const Value *op0 = (BI->getOperand(0));
-            SVFUtil::outs() << "IS BITCAST 0" << *op0 << "\n";
             if (const LoadInst *LI = dyn_cast<LoadInst>(op0)) {
-              SVFUtil::outs() << "0 IS LOAD" << *LI << "\n";
               const Value *op0 = (LI->getOperand(0));
-              SVFUtil::outs() << "LOAD op 0" << *op0 << "\n";
+              const string name = op0->getName().str();
+              SVFUtil::outs() << fmt::format("name is {}\n", name);
+              r.widget_name = name;
             }
-            // SVFUtil::outs() << "IS BITCAST 1" << BI->getOperand(1) << "\n";
           }
           index++;
         }
-        // for (auto it=callsite->op_begin();it!=callsite->op_end();it++){
-        //   Value *operand = *it;
-        //   SVFUtil::outs() << "arg_name: " << operand->getName() << "\n";
-        // }
       }
+      //
+      // SVFUtil::outs() << r << "\n";
+      records.push_back(r);
     }
   }
+  analyze(records, interesting_functions, interesting_map);
 }
 
 int main(int argc, char **argv) {
@@ -254,8 +230,7 @@ int main(int argc, char **argv) {
   char **arg_value = new char *[argc];
   std::vector<std::string> moduleNameVec;
   SVFUtil::processArguments(argc, argv, arg_num, arg_value, moduleNameVec);
-  cl::ParseCommandLineOptions(arg_num, arg_value,
-                              "Whole Program Points-to Analysis\n");
+  cl::ParseCommandLineOptions(arg_num, arg_value, "GUI Program Analysis\n");
 
   SVFModule *svfModule =
       LLVMModuleSet::getLLVMModuleSet()->buildSVFModule(moduleNameVec);
@@ -282,32 +257,6 @@ int main(int argc, char **argv) {
   /// ICFG
   ICFG *icfg = pag->getICFG();
   // icfg->dump("icfg");
-
-  /// Value-Flow Graph (VFG)
-  VFG *vfg = new VFG(callgraph);
-  // vfg->dump("vfg");
-
-  /// Sparse value-flow graph (SVFG)
-  SVFGBuilder svfBuilder;
-  SVFG *svfg = svfBuilder.buildFullSVFGWithoutOPT(ander);
-  // svfg->dump("svfg");
-
-  /// Collect uses of an LLVM Value
-  /// traverseOnVFG(svfg, value);
-
-  /// Collect all successor nodes on ICFG
-  /// traverseOnICFG(icfg, value);
-
-  LeakChecker *saber = new LeakChecker(); // if no checker is specified, we use
-                                          // leak checker as the default one.
-  saber->runOnModule(svfModule);
-
-  PathCondAllocator *pca = new PathCondAllocator();
-  pca->allocate(svfModule);
-  pca->printPathCond();
-
-  // Detector *detector = new Detector();
-  // detector->runOnModule(svfModule);
 
   traverseCallGraph(callgraph);
   LLVMModuleSet::getLLVMModuleSet()->dumpModulesToFile(".svf.bc");
