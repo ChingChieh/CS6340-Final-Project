@@ -6,6 +6,10 @@
 #include "Util/PathCondAllocator.h"
 #include "WPA/Andersen.h"
 #include "detector.h"
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <map>
+#include <vector>
 
 using namespace SVF;
 using namespace llvm;
@@ -141,6 +145,17 @@ void traverseCallGraph(PTACallGraph *callgraph) {
     const PTACallGraph::CallGraphEdgeSet ces = i->second;
     const SVFFunction *caller = cbn->getCaller();
     const Instruction *callsite = cbn->getCallSite();
+
+    const DebugLoc &DL = callsite->getDebugLoc();
+    if (DL) {
+      DIScope *Scope = cast<DIScope>(DL->getScope());
+      string fileName = Scope->getFilename().str();
+      u32_t line = DL.getLine();
+      u32_t col = DL.getCol();
+      // SVFUtil::outs() << "DL: " << *DL << "\n";
+      SVFUtil::outs() << fmt::format("file: {}, line: {}, col: {}\n", fileName,
+                                     line, col);
+    }
     const CallBlockNode::ActualParmVFGNodeVec &params = cbn->getActualParms();
 
     SVFUtil::outs() << "caller: " << caller->getName().str() << "\n";
@@ -179,6 +194,7 @@ void traverseCallGraph(PTACallGraph *callgraph) {
                             << "\n";
           } else if (const GetElementPtrInst *GEP =
                          dyn_cast<GetElementPtrInst>(v)) {
+            // NOTE: find "clicked"
             SVFUtil::outs() << "is GEP"
                             << "\n";
             const Value *gv = GEP->getPointerOperand();
@@ -199,6 +215,16 @@ void traverseCallGraph(PTACallGraph *callgraph) {
                 SVFUtil::outs() << s << "\n";
               }
             }
+          } else if (const BitCastInst *BI = dyn_cast<BitCastInst>(v)) {
+            SVFUtil::outs() << "IS BITCAST" << *BI << "\n";
+            const Value *op0 = (BI->getOperand(0));
+            SVFUtil::outs() << "IS BITCAST 0" << *op0 << "\n";
+            if (const LoadInst *LI = dyn_cast<LoadInst>(op0)) {
+              SVFUtil::outs() << "0 IS LOAD" << *LI << "\n";
+              const Value *op0 = (LI->getOperand(0));
+              SVFUtil::outs() << "LOAD op 0" << *op0 << "\n";
+            }
+            // SVFUtil::outs() << "IS BITCAST 1" << BI->getOperand(1) << "\n";
           }
           index++;
         }
